@@ -1,0 +1,250 @@
+% Document template for ANS Journals
+% Options: footnoteAtEnd - Places all footnotes at the end of document
+%               Usage: \documentclass[footnoteAtEnd]{style/nseJournal}
+\documentclass{style/nseJournal}
+
+\usepackage{subcaption}
+\usepackage{booktabs}
+
+\begin{document}
+
+\title{Automatically Resolving Neutron Resonances with Machine Learning}
+
+% Use the \addAuthor macro to add authors in the order they should appear. The second argument corresponds to
+% the affiliation declared below.
+% The corresponding author should be wrapped in \correspondingAuthor
+\addAuthor{\correspondingAuthor{Nataly R. Panczyk}}{a,b}
+% The corresponding author's email can be specified using \correspondingEmail
+\correspondingEmail{npanczyk@umich.edu}
+\addAuthor{Athanasios Stamatopoulos}{b}
+\addAuthor{Josef Svoboda}{b}
+\addAuthor{Majdi I. Radaideh}{a}
+
+% Affiliations can be added in the order they should appear. For breaks in addresses, use either \\ or \tabularnewline
+\addAffiliation{a}{Dept. of Nuclear Engineering and Radiological Sciences\\ University of Michigan, Ann Arbor, MI 48109}
+\addAffiliation{b}{Physics Division, Los Alamos National Laboratory\\ Los Alamos, NM 87545}
+
+% Add keywords to appear in Abstract in the order they should appear
+\addKeyword{Neutron Resonances}
+\addKeyword{Machine Learning}
+\addKeyword{Convolutional Neural Networks}
+\addKeyword{SAMMY}
+
+\titlePage
+
+\begin{abstract}
+This work seeks to demonstrate the feasibility of augmenting traditional R-Matrix codes with a robust machine learning framework by automatically detecting neutron resonances from transmission spectra. Notoriously chaotic, neutron transmission data prove unwieldy to traditional peak identification methods. The state-of-the-art R-Matrix codes physicists currently rely on to fit them depend on prior evaluations and much patience. This work presents a preliminary study that demonstrates how to expedite the post-experimental processing of neutron transmission data and to reduce skew by eliminating dependence on prior evaluations. We employ a fully convolutional neural network to make point-wise classifications of resonance or not-resonance regions of three transmission spectra---two evaluations and one experimental. We demonstrate up to 95\% accuracy when testing within the same spectrum and up to 87\% accuracy when testing on an unseen spectrum for a different nucleus, and we find these metrics conservative based on the application demands. By demonstrating this feasibility, we suggest future work both expand on the methods we use to resolve the resonances and to develop a framework to extract resonance parameters from those regions through an extended dataset of more spectra.
+\end{abstract}
+
+
+\section{Introduction}\label{sec:intro}
+% How can solving this problem help the research community more broadly?
+Nuclear data underpin experiments, simulations, and reactor design across the nuclear enterprise. Inaccuracies in these data inflate uncertainties throughout the workflow. Advancing the field therefore requires improved measurement and, especially, robust statistical fitting. One challenge in nuclear data lies in fitting complex neutron resonances in energies where resonances can be experimentally resolved, the Resolved Resonance Region (RRR). These resonances are experimentally acquired via time-of-flight (ToF) transmission measurements, during which we can relate the time a neutron takes to travel a certain distance with its energy. Details on the experimental acquisition can be found in Ref. \cite{STAMATOPOULOS2022166166}. In ToF transmission, these resonances appear as irregular, narrow dips in the spectrum. Accurately resolving and fitting these resonances, the focus of this study, is essential for obtaining the energy-dependent cross sections relied upon by reactor designers, safety analysts, and code developers.
+
+
+% What is the research gap?
+As it stands, analysts processing experimental data in the RRR typically rely on R-matrix evaluation codes---such as SAMMY \cite{nancy_m_larson_updated_2008} or REFIT \cite{moxon_1979}. While these codes are invaluable to the existing procedure of fitting transmission data, they carry some drawbacks. First, these codes require prior distributions, necessarily skewing new calculations towards past evaluations. Additionally, these codes are prone to finding non-physical solutions to resonance parameter fitting when portions of the total resonance width are negligibly small. These errors require manual intervention and subjective correction, two obviously suboptimal steps for a procedure that demands precision.
+
+An ideal solution to this problem involves automatic detection of these high-frequency resonances that does not depend on a prior distribution and instead truly characterizes the experimental results at hand. We apply such a method in this work using experimental results from neutrons in the meV-keV range impinging on a sample. As a brief background, during the impingement process, several reactions can occur: neutron capture (n,$\gamma$), elastic scattering (n,n), and fission (n,f). At characteristic energies, the cross section varies appreciably and we observe peaks, known as resonances. We describe resonances by a mean energy and a width, following a Breit-Wigner shape. For each type of reaction we have the corresponding widths---these are known as resonance parameters and are used to quantify cross sections for the aforementioned reactions.
+
+Following the automatic identification of the resonances, analysts could use a variety of techniques to obtain resonance parameters ($\Gamma_\gamma$ and $\Gamma_n$), whether that be through additional, well-trained machine learning (ML) methods or through a streamlined workflow in SAMMY. This work presents the first phase of such an endeavor, automating the prediction of resonances within a transmission signal using a one-dimensional, fully convolutional network (FCN) that could subsequently be coupled with SAMMY for easier manual correction of misclassifications.
+
+
+\section{Background}\label{sec:background}
+
+% LITERATURE REVIEW GOES HERE
+A natural solution to ``difficult pattern detection,'' as we find in neutron resonance identification, is machine learning. As such, several authors have attempted resonance/cross section prediction using ML in previous work. These works include a variety of attempts using ML to fit transmission spectra that either lie outside the resolved resonance region, focus on ``easier'' reaction types, or simply augment R-matrix codes like SAMMY or REFIT, without actually identifying resonances themselves. Such works include fitting cross sections of photo-nuclear reactions with Bayesian neural networks \cite{sun_enhancing_2025}, predicting exotic (n, 2n) cross sections with regression trees \cite{teelock-gaya_prediction_nodate}, evaluating Pu-239 fission cross sections with ML to handle outlying or discrepant data \cite{whewell_evaluating_2020}, predicting (n, 3n) cross sections using various ML models \cite{ali_uncu_predicting_2025}, predicting ($\gamma$, n) cross sections using physics informed neural networks and gradient boosted decision trees \cite{besnard-vauterin_experimental_2025},  predicting cross sections directly for a well-known isotope, U-235, using single phase shift neural networks \cite{hu_novel_2024}, and even wrapping SAMMY itself \cite{pleiades}. While all of these works use machine learning to predict cross sections, they are not generalizable methods for the resonance region of (n,$\gamma$), (n,n), or (n, fission) reactions. Other attempts to capture nuclear cross-section uncertainties with deep neural networks were made by \cite{radaideh2021modeling}. Overall, our review indicates that the application of ML in the nuclear data field is still at an early stage of development.
+
+The closest prior effort to our goal is Walton et al.'s automated resonance identification, which combines non-convex optimization with inferential statistics to infer resonance models directly from experimental ToF data with minimal manual intervention. \cite{walton_automated_2024}. While this method is a major step towards reducing subjectivity in resonance fits, it still requires an analyst to employ SAMMY for their analysis. This project seeks to expand the work of Walton et al. to a generalizable method for resonance detection with future work aimed at resonance parameter characterization (e.g., $\Gamma_g, \Gamma_{\gamma}$). The resonance detection method we employ in this paper takes inspiration from peak detection via ML in other domains, with substantial adaptations to address the complex nature of nuclear transmission spectra. Some examples of peak detection via ML include convolutional neural network (CNN)-transformer models for arrhythmia detection \cite{kim_novel_2025}, CNN classification and CNN integration for peak detection in raw liquid chromatography-mass spectroscopy \cite{melnikov_deep_2020}, and peak detection for chromatin immunoprecipitation followed by sequencing (ChIP-seq), a genomics identification problem that much like neutron resonance structures, typically involves human oversight \cite{oh_cnn-peaks_2020}.
+
+\section{Method}
+\subsection{Data}
+\label{sec:data}
+In this analysis, we consider three unique nuclear transmission datasets. These include a cesium-133 ENDF/B-VIII.0 evaluation \cite{brown_endfb-viii0_2018}, a samarium-149 ENDF/B-VIII.0 evaluation \cite{brown_endfb-viii0_2018}, and an experimentally acquired samarium-149 transmission spectra from the Device for Indirect Capture Experiments on Radionuclides (DICER), which is located at the Los Alamos Neutron Science Center (LANSCE) \cite{STAMATOPOULOS2022166166}. Each dataset contains two input features: transmission, which ranges from zero to one, and energy. For this analysis, we chose to omit energy from our modeling scheme to allow our models to become ``independent'' of the target material(s) used in their training data without major deterioration in performance.
+
+\label{sec:method}
+\subsection{Pre-Processing}
+% fitting the data using a b spline
+% sampling the fit
+The pre-processing scheme required for this model involves multiple phases. First, as convolutional neural networks (CNN) require evenly spaced samples, we load the transmission dataset of interest and fit the spectrum using B-splines via the scipy.interpolate function \verb|make_interp_spline()|. We then evaluate that spline curve at 256,000 evenly-spaced energy values to yield 256,000 transmission samples. While we chose the number of samples arbitrarily, this means that each dataset will have an equal number of samples after pre-processing, independent of its energy range. We can confirm the accuracy of our spline fitting approximation through the range of the residuals ($true-spline$), all of which are on the order of 1e-16.
+
+After sampling our spline curves, we then label the peak regions of the data. To do this, we implemented an interactive selection tool that allows a user to select the start and stop of each peak in the dataset. This tool uses an additional input file, a parameter file from SAMMY, to mark the expected peak locations on the uniformly sampled transmission spectra. The parameter file allows for automatic zooming and advancing, but could be substituted or removed pending further development of the tool. As a user selects a region, the labeling tool writes a corresponding label for each point in the uniformly sampled distribution. Data points that reside within a user-defined ``peak'' correspond to a ``1'' in the label file. Likewise, data points that lie outside regions of interest are marked ``0'' in the label file. Optionally, and likely depending on the complexity of the spectrum, the user may mark contaminant regions as ``2'' and ambiguous regions of ``3.'' We provide these additional labeling options to allow for both multiclass modeling efforts in future work and to track regions of uncertainty in the current analysis. For the purposes of this analysis, we set our models to perceive all values of ``2'' or ``3'' as ``0'' or ``non-peak'' regions.
+
+Figures \ref{fig:cesium-labels}, \ref{fig:samarium-eval-labels}, and \ref{fig:samarium-exp-labels} show the labeled transmission spectra for the cesium-133 evaluation, samarium-149 evaluation, and samarium-149 experimental datasets, respectively.
+
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[trim=15pt 15pt 10pt 15pt, clip, width=0.75\textwidth]{figures/Cs133/label_check.png}
+    \caption{Cesium-133 labeled transmission spectrum.}
+    \label{fig:cesium-labels}
+\end{figure}
+
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[trim=15pt 15pt 10pt 15pt, clip, width=0.75\textwidth]{figures/Sm149eval/label_check.png}
+    \caption{Samarium-149 evaluation labeled transmission spectrum.}
+    \label{fig:samarium-eval-labels}
+\end{figure}
+\vspace{-0.5em}
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[trim=15pt 15pt 10pt 15pt, clip, width=0.75\textwidth]{figures/Sm149_thin/label_check.png}
+    \caption{Experimental Samarium-149 labeled transmission spectrum.}
+    \label{fig:samarium-exp-labels}
+\end{figure}
+
+After labeling, we have a dataset with a single input feature, transmission, and a single output feature, a label, on a per-point basis. We then need to split up the dataset into a number of sequences. That exact number is another tunable parameter that we arbitrarily set to 1,000 points/samples per sequence. Before dividing the full dataset into sets of 1,000, we first shuffle all the pairs of transmission values and corresponding labels, such that the sequences are discontinuous in energy. This helps provide full-spectrum context during training and extends the flexibility of our limited data. Here, we allow an additional tunable parameter of ``overlap,'' which would include some number of repeat samples in each sequence. For simplicity, we excluded overlap in this analysis, but note that it might improve performance in data-limited scenarios. Finally, since our transmission values range from 0-1, we do not scale our dataset (e.g., via min-max or standard scaling).
+
+\subsection{Model Architecture and Training}
+To make our peak predictions, we employ a fully convolutional network (FCN)---a CNN without a fully connected layer. By excluding the fully connected layer, our model can make point-wise classification predictions. The nature of our datasets requires this flexibility because the peaks are not evenly spaced or identical in structure, so we cannot ask the model to predict if a given sequence contains a peak, rather, we ask what class each ``pixel'' (transmission value) belongs to. This flexibility, however, comes at the cost of introducing room for error. Since the goal of this detection algorithm is not to find the start and stop of the resonance, but merely its peak location, by making predictions on a pixel-wise basis, we ask for more precision than is required by our application. We will discuss the implications of this phenomenon later in the analysis.
+
+Notwithstanding the lack of a fully connected layer, our model architecture is one of a fairly typical CNN. It includes two alternating sets of 1D convolutional layers and batch normalization layers, then a dropout layer, followed by two more 1D convolutional layers. We train this model for a default of 50 epochs using Adam as our optimizer, binary cross entropy with logits loss as our loss function, and cosine annealing as our learning rate scheduler. We apply a positive weight of 1.33 (the ratio of negative to positive samples in the least skewed dataset, Sm-149 experimental) to our loss function to accommodate class imbalance in a uniform way across datasets. For each dataset's single spectra analysis, we train and test using five k-folds and calculate metrics on each fold to ensure consistent performance. We describe these metrics in Equation \ref{eq:metrics}, plus a standard accuracy calculation.
+\begin{align}
+    Precision &= \frac{TP}{TP + FP} & Recall &= \frac{TP}{TP + FN} & F1 = 2 \times \frac{precision\times recall}{precision + recall}
+    \label{eq:metrics}
+\end{align}
+where $TP$ is a true positive, $FP$ is a false positive, and $FN$ is a false negative.
+
+To visualize the results, we also provide a prediction plot using the model generated by the first k-fold. Finally, to further assess the generalization capability of our model, we employ a multi-spectra analysis for the evaluation cases, in which we train the model on a single evaluation spectrum (cesium-133 or samarium-149) and test on the other, and again vice versa. We employ the best hyperparameters found for the training dataset's single spectra analysis for the multi-spectra analysis.
+
+\subsection{Hyperparameter Tuning}
+To optimize its performance, we hyperparameter tune our FCN for each of the datasets. For each tuning process, we optimize over the average F1 score (shown in Equation \ref{eq:metrics}) of the five k-folds using a Tree-Structured Parzen Estimator algorithm (TPE) as defined by the \verb|Optuna| package. We employ the same training process for hyperparameter tuning as in our general modeling framework, with the exception of the number of epochs, which we limit to two during tuning. The CNN parameters tuned include the number of filters in each layer, kernel size, dropout rate, batch size, and the initial learning rate, where a representative range is selected for each parameter.
+
+\section{Results and Discussion}
+\label{sec:results}
+
+Table \ref{tab:hyperparameter_results} shows the best hyperparameter tuning results (determined by single-spectrum analysis).
+
+\begin{table}[!ht]
+    \centering
+    \small
+    \caption{Best hyperparameters found after 100 evaluations on each dataset using two epochs per trial.}
+    \begin{tabular}{lrrr}
+        \toprule
+         \textbf{Hyperparameter}  & \textbf{Cs-133 Eval.} & \textbf{Sm-149 Eval.} & \textbf{Sm-149 Exp.}  \\
+         \midrule
+         Filters & 128 & 64& 32\\
+         Kernel Sizes & [7, 9, 5, 7] & [3, 5, 5, 3] & [5, 5, 3, 9]\\
+         Dropout Rate & 0.33& 0.21 & 0.31 \\
+         Batch Size & 16 & 16 & 16\\
+         Initial Learning Rate & 0.00517 & 0.00468 & 0.00264\\
+         \midrule
+         Total Trainable Parameters & 461,825 & 82,945 & 17,153 \\
+         \bottomrule
+    \end{tabular}
+    \label{tab:hyperparameter_results}
+\end{table}
+
+Tables \ref{tab:cesium-metrics} and \ref{tab:sm-metrics-combined} present the evaluation metrics computed for each k-fold model on the cesium-133 evaluation and the samarium-149 evaluation and experimental spectra, respectively. We report the per-fold results only for cesium-133 in Table \ref{tab:cesium-metrics}; results for the other two spectra are omitted due to space constraints, as their metrics are similarly consistent.
+
+\begin{table}[ht!]
+\centering
+\small
+\caption{Metrics over five k-folds of 50 epochs each for the Cs-133 evaluation case.}
+\begin{tabular}{lrrrrr}
+\toprule
+ \textbf{Fold} & \textbf{Average Loss} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1 Score} \\
+\midrule
+1 & 0.143 & 0.954 & 0.847 & 0.835 & 0.841 \\
+2 & 0.140 & 0.955 & 0.844 & 0.853 & 0.848 \\
+3 & 0.140 & 0.955 & 0.844 & 0.841 & 0.843 \\
+4 & 0.142 & 0.956 & 0.850 & 0.850 & 0.850 \\
+5 & 0.138 & 0.955 & 0.848 & 0.847 & 0.848 \\
+\midrule
+Mean & 0.141 & 0.955 & 0.847 & 0.845 & 0.846 \\
+Standard Deviation & 0.002 & 0.001 & 0.003 & 0.007 & 0.004 \\
+\bottomrule
+\end{tabular}
+\label{tab:cesium-metrics}
+\end{table}
+
+\begin{table}[ht!]
+\centering
+\small
+\caption{Summary metrics (mean and standard deviation over five k-folds of 50 epochs each) for the Sm-149 evaluation and experimental cases.}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Case} & \textbf{Average Loss} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1 Score} \\
+\midrule
+\multicolumn{6}{l}{\textbf{Sm-149 Evaluation}} \\
+Mean & 0.348 & 0.875 & 0.846 & 0.831 & 0.839 \\
+Standard Deviation & 0.001 & 0.001 & 0.002 & 0.002 & 0.001 \\
+\midrule
+\multicolumn{6}{l}{\textbf{Sm-149 Experimental}} \\
+Mean & 0.541 & 0.780 & 0.750 & 0.733 & 0.741 \\
+Standard Deviation & 0.001 & 0.001 & 0.005 & 0.006 & 0.001 \\
+\bottomrule
+\end{tabular}
+\label{tab:sm-metrics-combined}
+\end{table}
+
+
+To visualize the model performances, Figures \ref{fig:cesium-preds}, \ref{fig:sm-eval-preds}, and \ref{fig:sm-exp-preds} show five batches of transmission data and the correctness of the first k-fold model's predictions on them over their associated energy values for the cesium-133 evaluation, the samarium-149 evaluation, and the samarium-149 experimental datasets, respectively. Additionally, we withheld loss and learning rate curves due to space limitations, but note that these figures showed expected behavior for both parameters.
+
+\begin{figure}[!ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[trim=20pt 0pt 55pt 40pt, clip, width=\linewidth]{figures/Cs133/predictions_flag.png}
+        \caption{Cesium-133 evaluation}
+        \label{fig:cesium-preds}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[trim=20pt 0pt 55pt 40pt, clip, width=\linewidth]{figures/Sm149eval/predictions_flag.png}
+        \caption{Samarium-149 evaluation}
+       \label{fig:sm-eval-preds}
+    \end{subfigure}
+    \vspace{2mm}
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[trim=20pt 0pt 55pt 40pt, clip, width=\linewidth]{figures/Sm149_thin/predictions_flag.png}
+        \caption{Samarium-149 experimental}
+        \label{fig:sm-exp-preds}
+    \end{subfigure}
+    \caption{Model predictions from the first k-fold model on five batches of unseen test data.}
+    \vspace{-1em}
+\end{figure}
+
+Finally, Table \ref{tab:multi-metrics} shows the cross evaluation spectra results for training on Cs-133, testing on Sm-149 and vice versa. We show results for the best model found during training for these cases.
+\begin{table}[ht!]
+\centering
+\caption{Metrics for the training and testing on opposite evaluation data for best model.}
+\begin{tabular}{rrrrrr}
+\toprule
+\textbf{Case} & \textbf{Average Loss} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1 Score} \\
+\midrule
+Train-Cs, Test-Sm  & 0.597 & 0.845 & 0.874 & 0.708 & 0.782 \\
+Train-Sm, Test-Cs  & 0.371 & 0.878 & 0.966 & 0.171 & 0.291 \\
+\bottomrule
+\end{tabular}
+\label{tab:multi-metrics}
+\end{table}
+Overall, we found our models to exhibit promising performance across all datasets and cross-spectra analyses, especially considering our data limitations. Our results deteriorated, however, as spectrum complexity increased; we observed the worst metrics for the experimental samarium case and the best metrics for the cesium evaluation case.
+
+It is important to note that due to the combined effect of our point-wise predictions and human inconsistency, our results err on the side of conservative metrics. As shown in Figures \ref{fig:cesium-preds} and \ref{fig:sm-eval-preds} (and less obviously in Figure \ref{fig:sm-exp-preds}), the majority of incorrect classifications occur on the outer edges of the resonances---regions that could reasonably be mislabeled as ``not-part-of-the-peak'' by the user, but would undoubtedly be considered ``in-the-peak-region'' on second glance. Because our model evaluates point-wise, these mislabels dilute the performance metrics of our models, despite these regions being uncritical to the stated goal of this work---to identify the locations of the resonances, not their start-stop energies. In other words, our model is too specific for our goals, but the inconsistent spacing of the resonances made this a necessary sacrifice to avoid  handling partial peaks. Future work should determine more precise ways to evaluate the performance of these models in accordance with how users will employ their predictions in practice.
+
+Considering the cross-spectra analysis, we did observe a substantial drop in the recall score for the model that trained on samarium and tested on cesium, and consequently on that same model's F1 score (which depends on recall). This drop likely stems from an increase in false negatives, since we did not observe a change in precision, which indicates that true positives remained stable. We hypothesize this increase in false negatives is caused by the model not seeing sufficiently many shallow resonances during its training on the samarium evaluation dataset, which, as shown by Figure \ref{fig:samarium-eval-labels}, has generally ``deeper'' resonances than the cesium evaluation dataset (see: Figure \ref{fig:cesium-labels}).
+
+We also noticed during our cross-spectra analysis that our models performed best with fewer epochs during training, indicating a tendency to overfit. An increase in data, especially from varying isotopes, should eliminate this phenomenon, making the models less sensitive to the resonance structures in a given transmission spectrum.
+
+
+\section{Conclusions and Future Work}
+Overall, as a feasibility study, this analysis demonstrates high potential for successful future work. We found the models in this analysis to generally perform well, even with limited data. Even the worst performing case, experimental Sm-149, showed promise, and we expect improvement with additional pre-processing (smoothing) and further model development. Importantly, we found consistency across k-folds \textit{and} across spectra, demonstrating that our models perform well on all subsets of training data and that we can generalize them beyond the target material we train them on. Still, this is just a preliminary analysis.
+
+To maximize near-term impact, future work will expand this analysis with more data and train a general model that can be rapidly adapted to specific facilities: we will expand the training set with additional experimental spectra---explicitly excluding prior evaluation targets to prevent bias---and apply light, resolution-aware smoothing (e.g., Savitzky--Golay) to mitigate measurement noise. Further, future work should package the method so a baseline model runs in an automated regime at DICER and can be adapted to other stations. Future work may find more advanced models, particularly those with some memory to be less sensitive to peak boundaries. Finally, and perhaps most obviously, future work should extend this work to predict resonance parameters such that this framework may actually be used as an alternative to R-Matrix codes in practice today.
+
+
+
+\pagebreak
+\section*{Acknowledgments}
+The first author of this work is supported by the National Science Foundation's Graduate Research Fellowship Program (DGE-2241144). This work was supported by the U.S. Department of Energy through the Los Alamos National Laboratory. Los Alamos National Laboratory is operated by Triad National Security, LLC, for the National Nuclear Security Administration of U.S. Department of Energy (Contract No. 89233218CNA000001). This work was also supported in part by the Nuclear Criticality Safety Program, funded and managed by the National Nuclear Security Administration for the Department of Energy.
+
+
+
+\pagebreak
+\bibliographystyle{style/ans_js}
+\bibliography{bibliography}
+
+\end{document}

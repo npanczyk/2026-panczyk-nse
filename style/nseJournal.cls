@@ -115,6 +115,7 @@
     \date{
         \vfill
         \renewcommand{\arraystretch}{0.8}
+        \textit{Preprint in Peer Review} \\
         \begin{tabular}[t]{rl}
         Number of pages:& \pageref*{LastPage} \\
         Number of tables:& \totaltables \\
